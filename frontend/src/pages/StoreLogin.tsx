@@ -11,7 +11,7 @@ export default function StoreLogin() {
   // 🧩 Lista de senhas válidas
   const VALID_PASSWORDS = ['0318', 't123'];
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (VALID_PASSWORDS.includes(password)) {
