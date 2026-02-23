@@ -95,12 +95,6 @@ export default function NewsletterManagement() {
           onChange={(e) => setForm({ ...form, title: e.target.value })}
         />
 
-        {/* <textarea
-          placeholder="内容"
-          value={form.content}
-          onChange={(e) => setForm({ ...form, content: e.target.value })}
-        /> */}
-
         <select
           value={form.source}
           onChange={(e) =>
