@@ -9,7 +9,7 @@ const router = Router();
 interface CreateNewsletterDTO {
   title: string;
   content: string;
-  source: string;
+  source?: string;
   link: string;
 }
 
@@ -29,13 +29,27 @@ interface IdParam {
 }
 
 // ========== UTILITÁRIOS ==========
-const formatNewsletterResponse = (newsletter: Newsletter): NewsletterResponse => ({
-  ...newsletter,
-  formatted_date: new Date(newsletter.updated_at).toLocaleDateString('pt-BR'),
-  short_content: newsletter.content.length > 100 
-    ? newsletter.content.substring(0, 100) + '...' 
-    : newsletter.content
-});
+const safeString = (value: string | null | undefined): string => {
+  return value || ''; // Converte null/undefined para string vazia
+};
+
+const formatNewsletterResponse = (newsletter: Newsletter): NewsletterResponse => {
+  // ✅ Garantir que todos os campos opcionais sejam strings seguras
+  const safeNewsletter = {
+    ...newsletter,
+    content: safeString(newsletter.content),
+    source: safeString(newsletter.source),
+    link: safeString(newsletter.link)
+  };
+  
+  return {
+    ...safeNewsletter,
+    formatted_date: new Date(safeNewsletter.updated_at).toLocaleDateString('pt-BR'),
+    short_content: safeNewsletter.content.length > 100 
+      ? safeNewsletter.content.substring(0, 100) + '...' 
+      : safeNewsletter.content
+  };
+};
 
 // ========== ROTAS ==========
 
@@ -49,7 +63,16 @@ router.get('/', async (_: Request, res: Response) => {
     );
     
     const newsletters = rows as Newsletter[];
-    res.json(newsletters.map(formatNewsletterResponse));
+    
+    // ✅ Garantir que todos os registros tenham content como string
+    const safeNewsletters = newsletters.map(newsletter => ({
+      ...newsletter,
+      content: safeString(newsletter.content),
+      source: safeString(newsletter.source),
+      link: safeString(newsletter.link)
+    }));
+    
+    res.json(safeNewsletters.map(formatNewsletterResponse));
     
   } catch (err) {
     console.error('❌ Erro ao listar newsletters:', err);
@@ -59,7 +82,7 @@ router.get('/', async (_: Request, res: Response) => {
 
 // GET /:id - Buscar por ID
 router.get('/:id', async (req: Request<IdParam>, res: Response) => {
-  const { id } = req.params; // ✅ Agora funciona!
+  const { id } = req.params;
   
   try {
     const [rows] = await pool.query<RowDataPacket[]>(
@@ -71,7 +94,17 @@ router.get('/:id', async (req: Request<IdParam>, res: Response) => {
       return res.status(404).json({ error: 'Newsletter não encontrada' });
     }
 
-    return res.json(formatNewsletterResponse(rows[0] as Newsletter));
+    const newsletter = rows[0] as Newsletter;
+    
+    // ✅ Garantir campos seguros
+    const safeNewsletter = {
+      ...newsletter,
+      content: safeString(newsletter.content),
+      source: safeString(newsletter.source),
+      link: safeString(newsletter.link)
+    };
+    
+    return res.json(formatNewsletterResponse(safeNewsletter));
     
   } catch (err) {
     console.error(`❌ Erro ao buscar newsletter ${id}:`, err);
@@ -84,13 +117,19 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const { title, content, source, link } = req.body as CreateNewsletterDTO;
 
-    if (!title || !content) {
-      return res.status(400).json({ error: 'Título e conteúdo são obrigatórios' });
+    // ✅ Apenas título obrigatório
+    if (!title) {
+      return res.status(400).json({ error: 'タイトルは必須です' });
     }
+
+    // ✅ Garantir que campos opcionais nunca sejam null
+    const contentValue = safeString(content);
+    const sourceValue = safeString(source);
+    const linkValue = safeString(link);
 
     const [result] = await pool.query<ResultSetHeader>(
       'INSERT INTO newsletters (title, content, source, link) VALUES (?, ?, ?, ?)',
-      [title, content, source || '', link || '']
+      [title, contentValue, sourceValue, linkValue]
     );
 
     const [newRows] = await pool.query<RowDataPacket[]>(
@@ -98,9 +137,19 @@ router.post('/', async (req: Request, res: Response) => {
       [result.insertId]
     );
 
+    const newNewsletter = newRows[0] as Newsletter;
+    
+    // ✅ Garantir campos seguros
+    const safeNewsletter = {
+      ...newNewsletter,
+      content: safeString(newNewsletter.content),
+      source: safeString(newNewsletter.source),
+      link: safeString(newNewsletter.link)
+    };
+
     return res.status(201).json({
       message: 'Newsletter criada com sucesso',
-      newsletter: formatNewsletterResponse(newRows[0] as Newsletter)
+      newsletter: formatNewsletterResponse(safeNewsletter)
     });
     
   } catch (err) {
@@ -111,7 +160,7 @@ router.post('/', async (req: Request, res: Response) => {
 
 // PUT /:id - Atualizar
 router.put('/:id', async (req: Request<IdParam>, res: Response) => {
-  const { id } = req.params; // ✅ Agora funciona!
+  const { id } = req.params;
   
   try {
     const { title, content, source, link } = req.body as Partial<CreateNewsletterDTO>;
@@ -129,9 +178,19 @@ router.put('/:id', async (req: Request<IdParam>, res: Response) => {
     const values: any[] = [];
 
     if (title) { updates.push('title = ?'); values.push(title); }
-    if (content) { updates.push('content = ?'); values.push(content); }
-    if (source !== undefined) { updates.push('source = ?'); values.push(source); }
-    if (link !== undefined) { updates.push('link = ?'); values.push(link); }
+    // ✅ Content pode ser atualizado mesmo se vazio
+    if (content !== undefined) { 
+      updates.push('content = ?'); 
+      values.push(safeString(content)); // Garantir que não seja null
+    }
+    if (source !== undefined) { 
+      updates.push('source = ?'); 
+      values.push(safeString(source)); 
+    }
+    if (link !== undefined) { 
+      updates.push('link = ?'); 
+      values.push(safeString(link)); 
+    }
 
     if (updates.length === 0) {
       return res.status(400).json({ error: 'Nenhum dado para atualizar' });
@@ -149,9 +208,19 @@ router.put('/:id', async (req: Request<IdParam>, res: Response) => {
       [id]
     );
 
+    const updatedNewsletter = updatedRows[0] as Newsletter;
+    
+    // ✅ Garantir campos seguros
+    const safeNewsletter = {
+      ...updatedNewsletter,
+      content: safeString(updatedNewsletter.content),
+      source: safeString(updatedNewsletter.source),
+      link: safeString(updatedNewsletter.link)
+    };
+
     return res.json({
       message: 'Newsletter atualizada com sucesso',
-      newsletter: formatNewsletterResponse(updatedRows[0] as Newsletter)
+      newsletter: formatNewsletterResponse(safeNewsletter)
     });
     
   } catch (err) {
@@ -162,7 +231,7 @@ router.put('/:id', async (req: Request<IdParam>, res: Response) => {
 
 // DELETE /:id - Remover
 router.delete('/:id', async (req: Request<IdParam>, res: Response) => {
-  const { id } = req.params; // ✅ Agora funciona!
+  const { id } = req.params;
   
   try {
     console.log(`📥 Removendo newsletter ID: ${id}`);
@@ -177,7 +246,7 @@ router.delete('/:id', async (req: Request<IdParam>, res: Response) => {
       return res.status(404).json({ error: 'Newsletter não encontrada' });
     }
 
-    const [_result] = await pool.query<ResultSetHeader>(
+    await pool.query<ResultSetHeader>(
       'DELETE FROM newsletters WHERE id = ?', 
       [id]
     );

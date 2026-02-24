@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import type { Newsletter } from "../types/types";
 import { formatDateJP } from "../utils/formatDateJP";
+// import './NewsletterManagement.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
+type NewsletterSubmitData = Omit<Newsletter, 'id'>;
+
 export default function NewsletterManagement() {
   const [list, setList] = useState<Newsletter[]>([]);
+  const [, setError] = useState<string | null>(null);
   const [form, setForm] = useState<Newsletter>({
     title: "",
     content: "",
@@ -14,13 +18,20 @@ export default function NewsletterManagement() {
     updated_at: ""
   });
   
-  const fechNewsletters = async (): Promise<Newsletter[]> => {
+  const fetchNewsletters = async (): Promise<Newsletter[]> => {
     try {
+      setError(null);
       const res = await fetch(`${API_URL}/api/newsletters`);
+      
+      if(!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
       const data = await res.json();
       return Array.isArray(data) ? data : [];
     } catch (err) {
       console.error("ネットワークエラー", err);
+      setError(err instanceof Error ? err.message : 'エラー')
       return [];
     }
   };
@@ -29,7 +40,7 @@ export default function NewsletterManagement() {
     let mounted = true;
 
     const load = async () => {
-      const data = await fechNewsletters();
+      const data = await fetchNewsletters();
       if (mounted) setList(data);
     };
 
@@ -41,21 +52,62 @@ export default function NewsletterManagement() {
   },[]);
 
   const submit = async () => {
-    const method = form.id ? "PUT" : "POST";
-    const url = form.id
-      ? `${API_URL}/api/newsletters/${form.id}` : `${API_URL}/api/newsletters`;
-    
-    await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
+    if (!form.title.trim()){
+      alert('タイトルは必須です');
+      return;
+    }
 
-    setForm({ title: "", content: "", source: "site", link: "", updated_at: ""});
-    
-    const data = await fechNewsletters();
-    setList(data);
-  }
+    setError(null);
+
+    try {
+      const method = form.id ? "PUT" : "POST";
+      const url = form.id
+      ? `${API_URL}/api/newsletters/${form.id}` : `${API_URL}/api/newsletters`;
+      
+       // ⚡ IMPORTANTE: Preparar dados - NÃO enviar content vazio
+      const dataToSend: NewsletterSubmitData = {
+        title: form.title.trim(),
+        source: form.source,
+        updated_at: new Date().toISOString()
+      };
+
+      // Só enviar content se tiver valor
+      if (form.content?.trim()) {
+        dataToSend.content = form.content.trim();
+      }
+      
+      // Só enviar link se tiver valor
+      if (form.link?.trim()) {
+        dataToSend.link = form.link.trim();
+      }
+      
+      // Adicionar updated_at
+      dataToSend.updated_at = new Date().toISOString();
+
+      console.log('📤 Enviando:', dataToSend); // DEBUG
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dataToSend), // Envia dados preparados
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || `HTTP ${res.status}`);
+      }
+      
+      setForm({ title: "", content: "", source: "site", link: "", updated_at: "" });
+      
+      const data = await fetchNewsletters();
+      setList(data);
+      
+    } catch (err) {
+      console.error('Submit error: ', err); // ✅ Corrigido: err, não error
+      setError(err instanceof Error ? err.message : 'Submit error');
+      alert(`エラー: ${err instanceof Error ? err.message : '保存に失敗しました'}`);
+    }
+  };
 
   const remove = async (id?: number) => {
     if (!id) return;
@@ -64,7 +116,7 @@ export default function NewsletterManagement() {
       method: "DELETE",
     });
 
-    const data = await fechNewsletters();
+    const data = await fetchNewsletters();
     setList(data);
   };
 
