@@ -23,7 +23,7 @@
 .newsletter-form input,
 .newsletter-form textarea,
 .newsletter-form select {
-  width: 100%;
+  /* width: 100%; */
   padding: 10px 12px;
   border-radius: 6px;
   border: 1px solid #ccc;
